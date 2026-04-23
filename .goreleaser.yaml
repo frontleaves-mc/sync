@@ -1,0 +1,36 @@
+version: 2
+
+project_name: frontleaves-sync
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: frontleaves-sync
+    main: .
+    binary: >-
+      frontleaves-sync-
+      {{- .Os }}-
+      {{- .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    no_unique_dist_dir: true
+
+snapshot:
+  version_template: "{{ .Version }}-next"
