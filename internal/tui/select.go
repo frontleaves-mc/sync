@@ -9,17 +9,21 @@ import (
 )
 
 type syncOption struct {
-	name     string
-	desc     string
-	syncType model.SyncType
-	icon     string
-	required bool
+	name       string
+	desc       string
+	syncType   model.SyncType
+	icon       string
+	required   bool
+	hasDetail  bool
+	detailKind model.SyncType
 }
 
 var syncOptions = []syncOption{
 	{name: "Server Mods", desc: "服务端模组（必选）", syncType: model.SyncTypeModsServer, icon: "🖥️", required: true},
-	{name: "Client Mods", desc: "客户端模组", syncType: model.SyncTypeModsClient, icon: "🎮"},
-	{name: "Config 同步", desc: "配置文件", syncType: model.SyncTypeConfig, icon: "📄"},
+	{name: "Client Mods", desc: "客户端模组", syncType: model.SyncTypeModsClient, icon: "🎮", hasDetail: true, detailKind: model.SyncTypeModsClient},
+	{name: "Config", desc: "配置文件", syncType: model.SyncTypeConfig, icon: "📄"},
+	{name: "Resourcepacks", desc: "资源包", syncType: model.SyncTypeResourcepacks, icon: "🎨", hasDetail: true, detailKind: model.SyncTypeResourcepacks},
+	{name: "Extends", desc: "扩展文件", syncType: model.SyncTypeExtends, icon: "📦"},
 }
 
 // SelectMsg 用户完成选择后发送的消息，携带选中的同步类型。
@@ -70,13 +74,14 @@ func (m SelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case " ":
-			if m.cursor == 0 {
+			if syncOptions[m.cursor].required {
 				return m, nil
 			}
 			m.checked[m.cursor] = !m.checked[m.cursor]
 		case "right", "l":
-			if m.cursor == 1 && m.checked[1] {
-				return m, func() tea.Msg { return ClientModsDetailMsg{} }
+			opt := syncOptions[m.cursor]
+			if opt.hasDetail && m.checked[m.cursor] {
+				return m, func() tea.Msg { return SyncDetailEnterMsg{Kind: opt.detailKind} }
 			}
 		case "enter":
 			selected := m.GetSelectedTypes()
@@ -117,7 +122,7 @@ func (m SelectModel) View() string {
 		line := fmt.Sprintf("  %s %s %s", prefix, opt.icon, style.Render(opt.name))
 		descText := mutedStyle.Render("        " + opt.desc)
 
-		if i == 1 && m.checked[1] {
+		if opt.hasDetail && m.checked[i] {
 			descText += mutedStyle.Render("  → 按右键查看详情")
 		}
 

@@ -15,7 +15,7 @@ const (
 	stepWelcome step = iota
 	stepCheck
 	stepSelect
-	stepClientModsDetail
+	stepSyncDetail
 	stepDiff
 	stepSync
 	stepDone
@@ -25,13 +25,13 @@ const (
 type AppModel struct {
 	currentStep step
 
-	welcome          tui.WelcomeModel
-	check            tui.CheckModel
-	select_          tui.SelectModel
-	clientModsDetail tui.ClientModsDetailModel
-	diff             tui.DiffModel
-	progress         tui.ProgressModel
-	done             tui.DoneModel
+	welcome    tui.WelcomeModel
+	check      tui.CheckModel
+	select_    tui.SelectModel
+	syncDetail tui.SyncDetailModel
+	diff       tui.DiffModel
+	progress   tui.ProgressModel
+	done       tui.DoneModel
 
 	client  *SyncClient
 	engine  *SyncEngine
@@ -52,6 +52,14 @@ func (f *metadataFetcherImpl) GetModsMetadataWithMode(ctx context.Context, mode 
 
 func (f *metadataFetcherImpl) GetConfigMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
 	return f.client.GetConfigMetadata(ctx)
+}
+
+func (f *metadataFetcherImpl) GetResourcepacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return f.client.GetResourcepacksMetadata(ctx)
+}
+
+func (f *metadataFetcherImpl) GetExtendsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return f.client.GetExtendsMetadata(ctx)
 }
 
 func (f *metadataFetcherImpl) ComputeDiff(remote []model.FileMetadata, syncType model.SyncType) *model.DiffResult {
@@ -99,8 +107,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCheck(msg)
 	case stepSelect:
 		return m.updateSelect(msg)
-	case stepClientModsDetail:
-		return m.updateClientModsDetail(msg)
+	case stepSyncDetail:
+		return m.updateSyncDetail(msg)
 	case stepDiff:
 		return m.updateDiff(msg)
 	case stepSync:
@@ -113,8 +121,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.welcome.Update(msg)
-	m.welcome = model.(tui.WelcomeModel)
+	newModel, cmd := m.welcome.Update(msg)
+	m.welcome = newModel.(tui.WelcomeModel)
 
 	if _, ok := msg.(tui.NextStepMsg); ok {
 		m.currentStep = stepCheck
@@ -125,8 +133,8 @@ func (m AppModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateCheck(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.check.Update(msg)
-	m.check = model.(tui.CheckModel)
+	newModel, cmd := m.check.Update(msg)
+	m.check = newModel.(tui.CheckModel)
 
 	if _, ok := msg.(tui.NextStepMsg); ok {
 		m.currentStep = stepSelect
@@ -137,13 +145,22 @@ func (m AppModel) updateCheck(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.select_.Update(msg)
-	m.select_ = model.(tui.SelectModel)
+	newModel, cmd := m.select_.Update(msg)
+	m.select_ = newModel.(tui.SelectModel)
 
-	if _, ok := msg.(tui.ClientModsDetailMsg); ok {
-		m.currentStep = stepClientModsDetail
-		m.clientModsDetail = tui.NewClientModsDetailModel(m.fetcher)
-		return m, m.clientModsDetail.Init()
+	if enter, ok := msg.(tui.SyncDetailEnterMsg); ok {
+		m.currentStep = stepSyncDetail
+		var config tui.DetailConfig
+		switch enter.Kind {
+		case model.SyncTypeModsClient:
+			config = tui.ClientModsDetailConfig
+		case model.SyncTypeResourcepacks:
+			config = tui.ResourcepacksDetailConfig
+		default:
+			return m, cmd
+		}
+		m.syncDetail = tui.NewSyncDetailModel(config, m.fetcher)
+		return m, m.syncDetail.Init()
 	}
 
 	if sel, ok := msg.(tui.SelectMsg); ok {
@@ -155,22 +172,28 @@ func (m AppModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m AppModel) updateClientModsDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.clientModsDetail.Update(msg)
-	m.clientModsDetail = model.(tui.ClientModsDetailModel)
+func (m AppModel) updateSyncDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
+	newModel, cmd := m.syncDetail.Update(msg)
+	m.syncDetail = newModel.(tui.SyncDetailModel)
 
-	switch msg.(type) {
-	case tui.ClientModsDetailBackMsg:
+	switch msg := msg.(type) {
+	case tui.SyncDetailBackMsg:
 		m.currentStep = stepSelect
 		return m, nil
 
-	case tui.ClientModsDetailConfirmMsg:
-		confirmMsg := msg.(tui.ClientModsDetailConfirmMsg)
+	case tui.SyncDetailConfirmMsg:
 		m.currentStep = stepDiff
 		selectedTypes := m.select_.GetSelectedTypes()
-		m.diff = tui.NewDiffModel(m.fetcher).
-			SetSyncTypes(selectedTypes).
-			SetPrecomputedClientDiff(confirmMsg.SelectedDiff)
+		diffBuilder := tui.NewDiffModel(m.fetcher).SetSyncTypes(selectedTypes)
+
+		switch msg.Kind {
+		case model.SyncTypeModsClient:
+			diffBuilder = diffBuilder.SetPrecomputedClientDiff(msg.SelectedDiff)
+		case model.SyncTypeResourcepacks:
+			diffBuilder = diffBuilder.SetPrecomputedResourcepacks(msg.SelectedDiff)
+		}
+
+		m.diff = diffBuilder
 		return m, m.diff.Init()
 	}
 
@@ -178,8 +201,8 @@ func (m AppModel) updateClientModsDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateDiff(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.diff.Update(msg)
-	m.diff = model.(tui.DiffModel)
+	newModel, cmd := m.diff.Update(msg)
+	m.diff = newModel.(tui.DiffModel)
 
 	if _, ok := msg.(tui.DiffConfirmMsg); ok {
 		m.currentStep = stepSync
@@ -196,8 +219,8 @@ func (m AppModel) updateDiff(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateProgress(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.progress.Update(msg)
-	m.progress = model.(tui.ProgressModel)
+	newModel, cmd := m.progress.Update(msg)
+	m.progress = newModel.(tui.ProgressModel)
 
 	if _, ok := msg.(tui.NextStepMsg); ok {
 		m.currentStep = stepDone
@@ -209,8 +232,8 @@ func (m AppModel) updateProgress(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateDone(msg tea.Msg) (tea.Model, tea.Cmd) {
-	model, cmd := m.done.Update(msg)
-	m.done = model.(tui.DoneModel)
+	newModel, cmd := m.done.Update(msg)
+	m.done = newModel.(tui.DoneModel)
 	return m, cmd
 }
 
@@ -222,8 +245,8 @@ func (m AppModel) View() string {
 		return m.check.View()
 	case stepSelect:
 		return m.select_.View()
-	case stepClientModsDetail:
-		return m.clientModsDetail.View()
+	case stepSyncDetail:
+		return m.syncDetail.View()
 	case stepDiff:
 		return m.diff.View()
 	case stepSync:

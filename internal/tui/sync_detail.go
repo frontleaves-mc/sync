@@ -12,7 +12,36 @@ import (
 	"github.com/frontleaves-mc/sync/internal/model"
 )
 
-// clientDetailPhase 表示 Client 详情界面的内部阶段。
+// DetailConfig 配置 SyncDetailModel 的行为。
+type DetailConfig struct {
+	Title       string
+	SyncType    model.SyncType
+	FetchFn     func(context.Context, MetadataFetcher) (*model.SyncMetadataResponse, error)
+	NormalizeFn func([]model.FileMetadata) []model.FileMetadata
+}
+
+var (
+	// ClientModsDetailConfig Client Mods 详情配置。
+	ClientModsDetailConfig = DetailConfig{
+		Title:    "Client Mods",
+		SyncType: model.SyncTypeModsClient,
+		FetchFn: func(ctx context.Context, f MetadataFetcher) (*model.SyncMetadataResponse, error) {
+			return f.GetModsMetadataWithMode(ctx, "client")
+		},
+		NormalizeFn: model.NormalizeModPaths,
+	}
+
+	// ResourcepacksDetailConfig Resourcepacks 详情配置。
+	ResourcepacksDetailConfig = DetailConfig{
+		Title:    "Resourcepacks",
+		SyncType: model.SyncTypeResourcepacks,
+		FetchFn: func(ctx context.Context, f MetadataFetcher) (*model.SyncMetadataResponse, error) {
+			return f.GetResourcepacksMetadata(ctx)
+		},
+	}
+)
+
+// clientDetailPhase 表示详情界面的内部阶段。
 type clientDetailPhase int
 
 const (
@@ -29,8 +58,9 @@ type clientModItem struct {
 	rename model.RenameEntry
 }
 
-// ClientModsDetailModel Client Mods 逐文件选择界面。
-type ClientModsDetailModel struct {
+// SyncDetailModel 通用逐文件选择界面，支持 Client Mods 和 Resourcepacks。
+type SyncDetailModel struct {
+	config  DetailConfig
 	phase   clientDetailPhase
 	spinner spinner.Model
 	fetcher MetadataFetcher
@@ -46,13 +76,14 @@ type ClientModsDetailModel struct {
 	err          error
 }
 
-// NewClientModsDetailModel 创建 Client Mods 详情界面。
-func NewClientModsDetailModel(fetcher MetadataFetcher) ClientModsDetailModel {
+// NewSyncDetailModel 创建通用详情界面。
+func NewSyncDetailModel(config DetailConfig, fetcher MetadataFetcher) SyncDetailModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = progressBarStyle
 
-	return ClientModsDetailModel{
+	return SyncDetailModel{
+		config:  config,
 		phase:   clientPhaseLoading,
 		spinner: s,
 		fetcher: fetcher,
@@ -60,23 +91,27 @@ func NewClientModsDetailModel(fetcher MetadataFetcher) ClientModsDetailModel {
 	}
 }
 
-func (m ClientModsDetailModel) Init() tea.Cmd {
+func (m SyncDetailModel) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.startFetch())
 }
 
-func (m ClientModsDetailModel) startFetch() tea.Cmd {
+func (m SyncDetailModel) startFetch() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		resp, err := m.fetcher.GetModsMetadataWithMode(ctx, "client")
+		resp, err := m.config.FetchFn(ctx, m.fetcher)
 		if err != nil {
-			return ClientModsDetailDoneMsg{Err: fmt.Errorf("获取 client mods 元数据失败: %w", err)}
+			return SyncDetailDoneMsg{Kind: m.config.SyncType, Err: fmt.Errorf("获取元数据失败: %w", err)}
 		}
-		diff := m.fetcher.ComputeDiff(model.NormalizeModPaths(resp.Data.Files), model.SyncTypeModsClient)
-		return ClientModsDetailDoneMsg{DiffResult: diff}
+		files := resp.Data.Files
+		if m.config.NormalizeFn != nil {
+			files = m.config.NormalizeFn(files)
+		}
+		diff := m.fetcher.ComputeDiff(files, m.config.SyncType)
+		return SyncDetailDoneMsg{Kind: m.config.SyncType, DiffResult: diff}
 	}
 }
 
-func (m ClientModsDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m SyncDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -89,7 +124,10 @@ func (m ClientModsDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-	case ClientModsDetailDoneMsg:
+	case SyncDetailDoneMsg:
+		if msg.Kind != m.config.SyncType {
+			return m, nil
+		}
 		if msg.Err != nil {
 			m.phase = clientPhaseError
 			m.err = msg.Err
@@ -106,7 +144,7 @@ func (m ClientModsDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch m.phase {
 		case clientPhaseEmpty, clientPhaseError:
-			return m, func() tea.Msg { return ClientModsDetailBackMsg{} }
+			return m, func() tea.Msg { return SyncDetailBackMsg{Kind: m.config.SyncType} }
 
 		case clientPhaseList:
 			switch msg.String() {
@@ -127,10 +165,10 @@ func (m ClientModsDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				selected := m.collectSelected()
 				return m, func() tea.Msg {
-					return ClientModsDetailConfirmMsg{SelectedDiff: selected}
+					return SyncDetailConfirmMsg{Kind: m.config.SyncType, SelectedDiff: selected}
 				}
 			case "esc", "backspace":
-				return m, func() tea.Msg { return ClientModsDetailBackMsg{} }
+				return m, func() tea.Msg { return SyncDetailBackMsg{Kind: m.config.SyncType} }
 			}
 		}
 	}
@@ -138,7 +176,7 @@ func (m ClientModsDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *ClientModsDetailModel) buildItems() {
+func (m *SyncDetailModel) buildItems() {
 	m.items = nil
 	if m.diffResult == nil {
 		return
@@ -158,15 +196,12 @@ func (m *ClientModsDetailModel) buildItems() {
 	m.scrollOffset = 0
 }
 
-// visibleLines 返回可用于显示列表项的行数。
-func (m ClientModsDetailModel) visibleLines() int {
-	// 标题 1 + 帮助 1 + 空行 1 + section headers(~3) + 空行 1 + 统计 1 + 帮助 1 = ~8 行开销
+func (m SyncDetailModel) visibleLines() int {
 	overhead := 6
 	return max(1, m.height-overhead)
 }
 
-// adjustScroll 确保光标始终在可见区域内。
-func (m *ClientModsDetailModel) adjustScroll() {
+func (m *SyncDetailModel) adjustScroll() {
 	visible := m.visibleLines()
 	if m.cursor < m.scrollOffset {
 		m.scrollOffset = m.cursor
@@ -175,11 +210,11 @@ func (m *ClientModsDetailModel) adjustScroll() {
 	}
 }
 
-func (m ClientModsDetailModel) View() string {
+func (m SyncDetailModel) View() string {
 	switch m.phase {
 	case clientPhaseLoading:
 		s := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			fmt.Sprintf("\n  正在获取 Client Mods 文件列表... %s", m.spinner.View()))
+			fmt.Sprintf("\n  正在获取 %s 文件列表... %s", m.config.Title, m.spinner.View()))
 		return lipgloss.NewStyle().MarginTop(2).Render(s)
 
 	case clientPhaseError:
@@ -189,7 +224,7 @@ func (m ClientModsDetailModel) View() string {
 
 	case clientPhaseEmpty:
 		s := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			"\n" + successStyle.Render("✅ 所有客户端模组已是最新，无需同步。") + "\n" + mutedStyle.Render("按任意键返回..."))
+			"\n" + successStyle.Render(fmt.Sprintf("✅ 所有 %s 已是最新，无需同步。", m.config.Title)) + "\n" + mutedStyle.Render("按任意键返回..."))
 		return lipgloss.NewStyle().MarginTop(2).Render(s)
 
 	case clientPhaseList:
@@ -198,20 +233,18 @@ func (m ClientModsDetailModel) View() string {
 	return ""
 }
 
-func (m ClientModsDetailModel) renderList() string {
+func (m SyncDetailModel) renderList() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("  Client Mods - 选择同步内容") + "\n")
+	sb.WriteString(titleStyle.Render(fmt.Sprintf("  %s - 选择同步内容", m.config.Title)) + "\n")
 	sb.WriteString(mutedStyle.Render("  ↑/↓ 移动，空格勾选，回车确认，Esc 返回") + "\n\n")
 
-	// 构建完整内容并计算可见区域
 	content := m.buildFullContent()
 	lines := strings.Split(content, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
 
-	// 确定可见范围：以当前 cursor 对应的 item 为中心
 	visible := m.visibleLines()
 	start := m.scrollOffset
 	end := min(len(lines), start+visible)
@@ -224,7 +257,6 @@ func (m ClientModsDetailModel) renderList() string {
 		sb.WriteString(mutedStyle.Render(fmt.Sprintf("  ... 还有 %d 项未显示", len(lines)-end)) + "\n")
 	}
 
-	// 统计
 	checkedCount := 0
 	for i := range m.items {
 		if m.checked[i] {
@@ -238,7 +270,7 @@ func (m ClientModsDetailModel) renderList() string {
 		Render(lipgloss.NewStyle().MarginTop(2).Render(content2))
 }
 
-func (m ClientModsDetailModel) buildFullContent() string {
+func (m SyncDetailModel) buildFullContent() string {
 	var sb strings.Builder
 	maxWidth := max(40, m.width-8)
 
@@ -281,7 +313,7 @@ func (m ClientModsDetailModel) buildFullContent() string {
 	return sb.String()
 }
 
-func (m ClientModsDetailModel) renderItem(idx int, name string, size int64, maxW int) string {
+func (m SyncDetailModel) renderItem(idx int, name string, size int64, maxW int) string {
 	prefix := uncheckedPrefix + " "
 	if m.checked[idx] {
 		prefix = checkedPrefix + " "
@@ -292,7 +324,6 @@ func (m ClientModsDetailModel) renderItem(idx int, name string, size int64, maxW
 		cursorMark = selectedItemStyle.Render("›")
 	}
 
-	// 预留空间：cursor(1) + space(1) + prefix(2) + space(1) + size(≈10) = ~15
 	availableForName := max(10, maxW-20)
 	nameStr := name
 	if len(nameStr) > availableForName {
@@ -306,7 +337,7 @@ func (m ClientModsDetailModel) renderItem(idx int, name string, size int64, maxW
 	return line + "\n"
 }
 
-func (m ClientModsDetailModel) collectSelected() *model.DiffResult {
+func (m SyncDetailModel) collectSelected() *model.DiffResult {
 	result := &model.DiffResult{}
 	if m.diffResult != nil {
 		result.Unchanged = m.diffResult.Unchanged

@@ -21,9 +21,11 @@ const (
 type SyncType string
 
 const (
-	SyncTypeModsServer SyncType = "server_mods"
-	SyncTypeModsClient SyncType = "client_mods"
-	SyncTypeConfig     SyncType = "config"
+	SyncTypeModsServer    SyncType = "server_mods"
+	SyncTypeModsClient    SyncType = "client_mods"
+	SyncTypeConfig        SyncType = "config"
+	SyncTypeResourcepacks SyncType = "resourcepacks"
+	SyncTypeExtends       SyncType = "extends"
 )
 
 // FileMetadata 服务端返回的文件元数据。
@@ -44,6 +46,21 @@ func NormalizeModPaths(files []FileMetadata) []FileMetadata {
 			parts := strings.SplitN(files[i].Path, "/", 3)
 			if len(parts) == 3 {
 				files[i].Path = parts[0] + "/" + parts[2]
+			}
+		}
+	}
+	return files
+}
+
+// NormalizeExtendsPaths 将 extends/ 路径规范化为根路径，
+// 同时保留原始路径到 RemotePath 用于下载。
+func NormalizeExtendsPaths(files []FileMetadata) []FileMetadata {
+	for i := range files {
+		if strings.HasPrefix(files[i].Path, "extends/") {
+			files[i].RemotePath = files[i].Path
+			parts := strings.SplitN(files[i].Path, "/", 2)
+			if len(parts) == 2 {
+				files[i].Path = parts[1]
 			}
 		}
 	}

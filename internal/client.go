@@ -38,6 +38,16 @@ func (c *SyncClient) GetConfigMetadata(ctx context.Context) (*model.SyncMetadata
 	return c.fetchMetadata(ctx, "/sync/config/metadata")
 }
 
+// GetResourcepacksMetadata 获取服务端 resourcepacks 目录的文件元数据。
+func (c *SyncClient) GetResourcepacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return c.fetchMetadata(ctx, "/sync/resourcepacks/metadata")
+}
+
+// GetExtendsMetadata 获取服务端 extends 目录的文件元数据。
+func (c *SyncClient) GetExtendsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return c.fetchMetadata(ctx, "/sync/extends/metadata")
+}
+
 // fetchMetadata 通用元数据请求。
 func (c *SyncClient) fetchMetadata(ctx context.Context, path string) (*model.SyncMetadataResponse, error) {
 	reqURL := c.baseURL + path

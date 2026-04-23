@@ -21,22 +21,25 @@ func Cancel() tea.Cmd {
 	return func() tea.Msg { return CancelMsg{} }
 }
 
-// QuitMsg 退出程序消息。
-type QuitMsg struct{}
+// SyncDetailEnterMsg 从选择界面钻入详情（Client Mods / Resourcepacks）。
+type SyncDetailEnterMsg struct {
+	Kind model.SyncType
+}
 
-// ClientModsDetailMsg 从选择界面钻入 Client Mods 详情。
-type ClientModsDetailMsg struct{}
-
-// ClientModsDetailDoneMsg Client Mods 元数据获取完成。
-type ClientModsDetailDoneMsg struct {
+// SyncDetailDoneMsg 详情元数据获取完成。
+type SyncDetailDoneMsg struct {
+	Kind       model.SyncType
 	DiffResult *model.DiffResult
 	Err        error
 }
 
-// ClientModsDetailConfirmMsg 用户确认 Client Mods 选择。
-type ClientModsDetailConfirmMsg struct {
+// SyncDetailConfirmMsg 用户确认详情选择。
+type SyncDetailConfirmMsg struct {
+	Kind         model.SyncType
 	SelectedDiff *model.DiffResult
 }
 
-// ClientModsDetailBackMsg 用户从 Client Mods 详情返回。
-type ClientModsDetailBackMsg struct{}
+// SyncDetailBackMsg 用户从详情返回。
+type SyncDetailBackMsg struct {
+	Kind model.SyncType
+}

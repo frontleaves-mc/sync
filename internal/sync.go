@@ -22,7 +22,6 @@ type SyncEngine struct {
 
 // NewSyncEngine 创建同步引擎实例。
 func NewSyncEngine(client *SyncClient) *SyncEngine {
-	// 先检查当前目录，再检查上级（二进制可能在 update/ 子目录中）
 	mcDir := filepath.Join(".", model.McDirName)
 	if _, err := os.Stat(mcDir); err != nil {
 		mcDir = filepath.Join("..", model.McDirName)
@@ -36,7 +35,14 @@ func NewSyncEngine(client *SyncClient) *SyncEngine {
 // ComputeDiff 计算本地文件与服务端元数据的差异，包含重命名检测。
 func (e *SyncEngine) ComputeDiff(remote []model.FileMetadata, syncType model.SyncType) *model.DiffResult {
 	result := &model.DiffResult{}
-	localHashes := e.scanLocalFiles(syncType)
+
+	var localHashes map[string]string
+	if syncType == model.SyncTypeExtends {
+		// extends 直接服务于 .minecraft 根目录，按远端文件定向检查
+		localHashes = e.scanTargetedFiles(remote)
+	} else {
+		localHashes = e.scanLocalFiles(syncType)
+	}
 
 	// 第一步：按路径匹配
 	for _, rf := range remote {
@@ -77,10 +83,14 @@ func (e *SyncEngine) ComputeDiff(remote []model.FileMetadata, syncType model.Syn
 	result.ToAdd = toAdd
 
 	// 第三步：对于 server mods，本地存在但远端不存在的文件需要删除
+	// 仅删除 [必须] 或 [基础] 开头的模组，其余为用户自行添加，保留
 	if syncType == model.SyncTypeModsServer {
 		for path := range localHashes {
 			if !consumedByRename[path] {
-				result.ToDelete = append(result.ToDelete, path)
+				name := filepath.Base(path)
+				if strings.HasPrefix(name, "[必须]") || strings.HasPrefix(name, "[基础]") {
+					result.ToDelete = append(result.ToDelete, path)
+				}
 			}
 		}
 	}
@@ -94,6 +104,7 @@ func (e *SyncEngine) scanLocalFiles(syncType model.SyncType) map[string]string {
 
 	var dir string
 	var prefix string
+	recursive := false
 	switch syncType {
 	case model.SyncTypeModsServer, model.SyncTypeModsClient:
 		dir = filepath.Join(e.mcDir, "mods")
@@ -101,11 +112,29 @@ func (e *SyncEngine) scanLocalFiles(syncType model.SyncType) map[string]string {
 	case model.SyncTypeConfig:
 		dir = filepath.Join(e.mcDir, "config")
 		prefix = "config"
+		recursive = true
+	case model.SyncTypeResourcepacks:
+		dir = filepath.Join(e.mcDir, "resourcepacks")
+		prefix = "resourcepacks"
+		recursive = true
 	default:
 		return hashes
 	}
 
-	e.scanDirRecursive(dir, prefix, syncType == model.SyncTypeConfig, hashes)
+	e.scanDirRecursive(dir, prefix, recursive, hashes)
+	return hashes
+}
+
+// scanTargetedFiles 按 remote 文件列表定向检查本地是否存在，返回 path→hash 映射。
+func (e *SyncEngine) scanTargetedFiles(remote []model.FileMetadata) map[string]string {
+	hashes := make(map[string]string)
+	for _, rf := range remote {
+		fullPath := filepath.Join(e.mcDir, rf.Path)
+		hash, err := e.computeLocalHash(fullPath)
+		if err == nil {
+			hashes[rf.Path] = "sha256:" + hash
+		}
+	}
 	return hashes
 }
 
@@ -195,7 +224,6 @@ func (e *SyncEngine) DownloadAndVerify(ctx context.Context, meta model.FileMetad
 		return fmt.Errorf("哈希校验失败: 期望 %s, 实际 %s", meta.Hash, actualHash)
 	}
 
-	// Windows 不允许重命名有打开句柄的文件，必须在 Rename 前显式关闭
 	f.Close()
 
 	if err := os.Rename(tmpPath, targetPath); err != nil {
