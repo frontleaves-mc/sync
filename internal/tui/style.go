@@ -64,6 +64,9 @@ var (
 	uncheckedPrefix = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6E738D")).Render("☐")
 
+	lockedPrefix = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#A6DA95")).Render("⊕")
+
 	buttonActiveStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("#7DC4E0")).
 				Foreground(lipgloss.Color("#1E2030")).

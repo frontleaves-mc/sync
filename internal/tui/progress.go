@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/frontleaves-mc/sync/internal/model"
 )
 
@@ -78,7 +79,8 @@ func (m ProgressModel) renderProgress() string {
 	s += fmt.Sprintf("  %s\n", progressBarStyle.Render(bar))
 	s += mutedStyle.Render(fmt.Sprintf("  共 %d 个文件待处理...", m.total)) + "\n"
 
-	return s
+	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+		Render(lipgloss.NewStyle().MarginTop(2).Render(s))
 }
 
 // GetResult 返回同步结果。

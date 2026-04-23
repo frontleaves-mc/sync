@@ -15,6 +15,7 @@ const (
 	stepWelcome step = iota
 	stepCheck
 	stepSelect
+	stepClientModsDetail
 	stepDiff
 	stepSync
 	stepDone
@@ -24,15 +25,16 @@ const (
 type AppModel struct {
 	currentStep step
 
-	welcome  tui.WelcomeModel
-	check    tui.CheckModel
-	select_  tui.SelectModel
-	diff     tui.DiffModel
-	progress tui.ProgressModel
-	done     tui.DoneModel
+	welcome          tui.WelcomeModel
+	check            tui.CheckModel
+	select_          tui.SelectModel
+	clientModsDetail tui.ClientModsDetailModel
+	diff             tui.DiffModel
+	progress         tui.ProgressModel
+	done             tui.DoneModel
 
-	client *SyncClient
-	engine *SyncEngine
+	client  *SyncClient
+	engine  *SyncEngine
 	fetcher *metadataFetcherImpl
 	width   int
 	height  int
@@ -44,8 +46,8 @@ type metadataFetcherImpl struct {
 	engine *SyncEngine
 }
 
-func (f *metadataFetcherImpl) GetModsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
-	return f.client.GetModsMetadata(ctx)
+func (f *metadataFetcherImpl) GetModsMetadataWithMode(ctx context.Context, mode string) (*model.SyncMetadataResponse, error) {
+	return f.client.GetModsMetadataWithMode(ctx, mode)
 }
 
 func (f *metadataFetcherImpl) GetConfigMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
@@ -97,6 +99,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCheck(msg)
 	case stepSelect:
 		return m.updateSelect(msg)
+	case stepClientModsDetail:
+		return m.updateClientModsDetail(msg)
 	case stepDiff:
 		return m.updateDiff(msg)
 	case stepSync:
@@ -136,9 +140,37 @@ func (m AppModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.select_.Update(msg)
 	m.select_ = model.(tui.SelectModel)
 
+	if _, ok := msg.(tui.ClientModsDetailMsg); ok {
+		m.currentStep = stepClientModsDetail
+		m.clientModsDetail = tui.NewClientModsDetailModel(m.fetcher)
+		return m, m.clientModsDetail.Init()
+	}
+
 	if sel, ok := msg.(tui.SelectMsg); ok {
 		m.currentStep = stepDiff
 		m.diff = tui.NewDiffModel(m.fetcher).SetSyncTypes(sel.SyncTypes)
+		return m, m.diff.Init()
+	}
+
+	return m, cmd
+}
+
+func (m AppModel) updateClientModsDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.clientModsDetail.Update(msg)
+	m.clientModsDetail = model.(tui.ClientModsDetailModel)
+
+	switch msg.(type) {
+	case tui.ClientModsDetailBackMsg:
+		m.currentStep = stepSelect
+		return m, nil
+
+	case tui.ClientModsDetailConfirmMsg:
+		confirmMsg := msg.(tui.ClientModsDetailConfirmMsg)
+		m.currentStep = stepDiff
+		selectedTypes := m.select_.GetSelectedTypes()
+		m.diff = tui.NewDiffModel(m.fetcher).
+			SetSyncTypes(selectedTypes).
+			SetPrecomputedClientDiff(confirmMsg.SelectedDiff)
 		return m, m.diff.Init()
 	}
 
@@ -190,6 +222,8 @@ func (m AppModel) View() string {
 		return m.check.View()
 	case stepSelect:
 		return m.select_.View()
+	case stepClientModsDetail:
+		return m.clientModsDetail.View()
 	case stepDiff:
 		return m.diff.View()
 	case stepSync:

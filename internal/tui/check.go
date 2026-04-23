@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/frontleaves-mc/sync/internal/model"
 )
 
@@ -42,7 +43,8 @@ func (m CheckModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m CheckModel) View() string {
 	if !m.checked {
-		return "\n  检查运行环境...\n"
+		s := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render("\n  检查运行环境...\n")
+		return lipgloss.NewStyle().MarginTop(2).Render(s)
 	}
 
 	s := "\n  检查运行环境...\n\n"
@@ -53,7 +55,8 @@ func (m CheckModel) View() string {
 		s += errorStyle.Render("  ❌ 未找到 .minecraft/ 目录") + "\n\n"
 		s += errorStyle.Render("  请将本程序放置在与 .minecraft/ 同级的目录下运行。") + "\n\n"
 		s += mutedStyle.Render("  按任意键退出...") + "\n"
-		return s
+		return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+			Render(lipgloss.NewStyle().MarginTop(2).Render(s))
 	}
 
 	if m.result.ModsDirOK {
@@ -69,7 +72,8 @@ func (m CheckModel) View() string {
 	}
 
 	s += "\n" + mutedStyle.Render("  按任意键继续...") + "\n"
-	return s
+	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+		Render(lipgloss.NewStyle().MarginTop(2).Render(s))
 }
 
 // CheckDoneMsg 环境检查完成消息。

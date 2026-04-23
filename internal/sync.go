@@ -60,6 +60,7 @@ func (e *SyncEngine) ComputeDiff(remote []model.FileMetadata, syncType model.Syn
 		}
 	}
 
+	consumedByRename := make(map[string]bool)
 	var toAdd []model.FileMetadata
 	for _, rf := range result.ToAdd {
 		if localPath, found := hashToPath[rf.Hash]; found {
@@ -68,11 +69,21 @@ func (e *SyncEngine) ComputeDiff(remote []model.FileMetadata, syncType model.Syn
 				NewPath: rf.Path,
 			})
 			delete(hashToPath, rf.Hash)
+			consumedByRename[localPath] = true
 		} else {
 			toAdd = append(toAdd, rf)
 		}
 	}
 	result.ToAdd = toAdd
+
+	// 第三步：对于 server mods，本地存在但远端不存在的文件需要删除
+	if syncType == model.SyncTypeModsServer {
+		for path := range localHashes {
+			if !consumedByRename[path] {
+				result.ToDelete = append(result.ToDelete, path)
+			}
+		}
+	}
 
 	return result
 }
@@ -82,16 +93,19 @@ func (e *SyncEngine) scanLocalFiles(syncType model.SyncType) map[string]string {
 	hashes := make(map[string]string)
 
 	var dir string
+	var prefix string
 	switch syncType {
-	case model.SyncTypeMods:
+	case model.SyncTypeModsServer, model.SyncTypeModsClient:
 		dir = filepath.Join(e.mcDir, "mods")
+		prefix = "mods"
 	case model.SyncTypeConfig:
 		dir = filepath.Join(e.mcDir, "config")
+		prefix = "config"
 	default:
 		return hashes
 	}
 
-	e.scanDirRecursive(dir, string(syncType), syncType == model.SyncTypeConfig, hashes)
+	e.scanDirRecursive(dir, prefix, syncType == model.SyncTypeConfig, hashes)
 	return hashes
 }
 
@@ -159,7 +173,7 @@ func (e *SyncEngine) DownloadAndVerify(ctx context.Context, meta model.FileMetad
 	}
 	defer f.Close()
 
-	stream, _, err := e.client.DownloadFile(ctx, meta.Path)
+	stream, _, err := e.client.DownloadFile(ctx, meta.RemotePath)
 	if err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("下载失败: %w", err)
@@ -212,6 +226,23 @@ func (e *SyncEngine) RenameFile(oldRelPath, newRelPath string) error {
 func (e *SyncEngine) ExecuteSync(ctx context.Context, diff *model.DiffResult) *model.SyncResult {
 	result := &model.SyncResult{}
 	var mu sync.Mutex
+
+	// 先删除本地多余文件（server mods 强制同步）
+	for _, relPath := range diff.ToDelete {
+		fullPath := filepath.Join(e.mcDir, relPath)
+		if err := os.Remove(fullPath); err != nil {
+			mu.Lock()
+			result.Failed = append(result.Failed, model.FailedFile{
+				Path:   relPath,
+				Reason: err.Error(),
+			})
+			mu.Unlock()
+		} else {
+			mu.Lock()
+			result.Deleted++
+			mu.Unlock()
+		}
+	}
 
 	// 先执行重命名（快速，无网络 IO）
 	for _, entry := range diff.ToRename {

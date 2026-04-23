@@ -6,15 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/frontleaves-mc/sync/internal/model"
 )
 
 // MetadataFetcher 定义获取元数据和计算差异的接口。
 type MetadataFetcher interface {
-	GetModsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
+	GetModsMetadataWithMode(ctx context.Context, mode string) (*model.SyncMetadataResponse, error)
 	GetConfigMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
 	ComputeDiff(remote []model.FileMetadata, syncType model.SyncType) *model.DiffResult
 }
@@ -36,24 +37,27 @@ const (
 
 // DiffDoneMsg 差异计算完成消息。
 type DiffDoneMsg struct {
-	DiffMods *model.DiffResult
-	DiffCfg  *model.DiffResult
-	Err      error
+	DiffServerMods *model.DiffResult
+	DiffClientMods *model.DiffResult
+	DiffCfg        *model.DiffResult
+	Err            error
 }
 
 // DiffConfirmMsg 用户确认同步消息。
 type DiffConfirmMsg struct{}
 
 type DiffModel struct {
-	phase        diffPhase
-	spinner      spinner.Model
-	syncTypes    []model.SyncType
+	phase     diffPhase
+	spinner   spinner.Model
+	syncTypes []model.SyncType
 
 	fetcher MetadataFetcher
 
-	diffMods *model.DiffResult
-	diffCfg  *model.DiffResult
-	err      error
+	diffServerMods        *model.DiffResult
+	diffClientMods        *model.DiffResult
+	diffCfg               *model.DiffResult
+	precomputedClientDiff *model.DiffResult
+	err                   error
 
 	focusConfirm bool
 	width        int
@@ -82,6 +86,12 @@ func (m DiffModel) SetSyncTypes(types []model.SyncType) DiffModel {
 	return m
 }
 
+// SetPrecomputedClientDiff 设置从 Client 详情界面传入的预筛选结果。
+func (m DiffModel) SetPrecomputedClientDiff(diff *model.DiffResult) DiffModel {
+	m.precomputedClientDiff = diff
+	return m
+}
+
 func (m DiffModel) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.startFetch())
 }
@@ -89,16 +99,26 @@ func (m DiffModel) Init() tea.Cmd {
 func (m DiffModel) startFetch() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		var diffMods, diffCfg *model.DiffResult
+		var diffServer, diffClient, diffCfg *model.DiffResult
 
 		for _, st := range m.syncTypes {
 			switch st {
-			case model.SyncTypeMods:
-				resp, fetchErr := m.fetcher.GetModsMetadata(ctx)
+			case model.SyncTypeModsServer:
+				resp, fetchErr := m.fetcher.GetModsMetadataWithMode(ctx, "server")
 				if fetchErr != nil {
-					return DiffDoneMsg{Err: fmt.Errorf("获取 mods 元数据失败: %w", fetchErr)}
+					return DiffDoneMsg{Err: fmt.Errorf("获取 server mods 元数据失败: %w", fetchErr)}
 				}
-				diffMods = m.fetcher.ComputeDiff(resp.Data.Files, model.SyncTypeMods)
+				diffServer = m.fetcher.ComputeDiff(model.NormalizeModPaths(resp.Data.Files), model.SyncTypeModsServer)
+			case model.SyncTypeModsClient:
+				if m.precomputedClientDiff != nil {
+					diffClient = m.precomputedClientDiff
+				} else {
+					resp, fetchErr := m.fetcher.GetModsMetadataWithMode(ctx, "client")
+					if fetchErr != nil {
+						return DiffDoneMsg{Err: fmt.Errorf("获取 client mods 元数据失败: %w", fetchErr)}
+					}
+					diffClient = m.fetcher.ComputeDiff(model.NormalizeModPaths(resp.Data.Files), model.SyncTypeModsClient)
+				}
 			case model.SyncTypeConfig:
 				resp, fetchErr := m.fetcher.GetConfigMetadata(ctx)
 				if fetchErr != nil {
@@ -108,7 +128,7 @@ func (m DiffModel) startFetch() tea.Cmd {
 			}
 		}
 
-		return DiffDoneMsg{DiffMods: diffMods, DiffCfg: diffCfg}
+		return DiffDoneMsg{DiffServerMods: diffServer, DiffClientMods: diffClient, DiffCfg: diffCfg}
 	}
 }
 
@@ -135,7 +155,8 @@ func (m DiffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.Err
 			return m, nil
 		}
-		m.diffMods = msg.DiffMods
+		m.diffServerMods = msg.DiffServerMods
+		m.diffClientMods = msg.DiffClientMods
 		m.diffCfg = msg.DiffCfg
 		m.phase = diffPhasePreview
 		m.viewport.SetContent(m.buildContent())
@@ -167,7 +188,7 @@ func (m DiffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *DiffModel) initViewport() {
-	vpWidth := max(20, m.width-8)
+	vpWidth := max(20, m.width-4)
 	vpHeight := min(maxDiffVPHeight, max(minDiffVPHeight, m.height-diffVPOverhead))
 
 	if !m.vpReady {
@@ -182,10 +203,14 @@ func (m *DiffModel) initViewport() {
 func (m DiffModel) View() string {
 	switch m.phase {
 	case diffPhaseLoading:
-		return fmt.Sprintf("\n  正在获取服务端文件列表... %s", m.spinner.View())
+		s := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+			Render(fmt.Sprintf("\n  正在获取服务端文件列表... %s", m.spinner.View()))
+		return lipgloss.NewStyle().MarginTop(2).Render(s)
 
 	case diffPhaseError:
-		return "\n" + errorStyle.Render(fmt.Sprintf("  ❌ %s", m.err)) + "\n\n" + mutedStyle.Render("  按任意键返回...")
+		s := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+			Render("\n" + errorStyle.Render(fmt.Sprintf("❌ %s", m.err)) + "\n" + mutedStyle.Render("按任意键返回..."))
+		return lipgloss.NewStyle().MarginTop(2).Render(s)
 
 	case diffPhasePreview:
 		return m.renderPreview()
@@ -197,7 +222,7 @@ func (m DiffModel) View() string {
 func (m DiffModel) renderPreview() string {
 	s := titleStyle.Render("  同步预览") + "\n\n"
 
-	_, _, _, totalUnchanged := m.countStats()
+	_, _, _, _, totalUnchanged := m.countStats()
 
 	if m.vpReady {
 		s += diffBoxStyle.Render(m.viewport.View()) + "\n"
@@ -219,36 +244,33 @@ func (m DiffModel) renderPreview() string {
 	}
 	s += "\n"
 
-	return s
+	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).
+		Render(lipgloss.NewStyle().MarginTop(2).Render(s))
 }
 
-func (m DiffModel) countStats() (add, update, rename, unchanged int) {
-	if m.diffMods != nil {
-		add += len(m.diffMods.ToAdd)
-		update += len(m.diffMods.ToUpdate)
-		rename += len(m.diffMods.ToRename)
-		unchanged += m.diffMods.Unchanged
-	}
-	if m.diffCfg != nil {
-		add += len(m.diffCfg.ToAdd)
-		update += len(m.diffCfg.ToUpdate)
-		rename += len(m.diffCfg.ToRename)
-		unchanged += m.diffCfg.Unchanged
+func (m DiffModel) countStats() (add, update, rename, del, unchanged int) {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg} {
+		if d != nil {
+			add += len(d.ToAdd)
+			update += len(d.ToUpdate)
+			rename += len(d.ToRename)
+			del += len(d.ToDelete)
+			unchanged += d.Unchanged
+		}
 	}
 	return
 }
 
 // availableContentWidth 返回 viewport 内可用于文件条目显示的宽度。
 func (m DiffModel) availableContentWidth() int {
-	vpWidth := max(20, m.width-8)
-	// 减去 viewport 的 border + padding（diffBoxStyle: Padding(0,1) + RoundedBorder = 4）
+	vpWidth := max(20, m.width-4)
 	return vpWidth - 4
 }
 
 func (m DiffModel) buildContent() string {
 	var sb strings.Builder
 
-	totalAdd, totalUpdate, totalRename, _ := m.countStats()
+	totalAdd, totalUpdate, totalRename, totalDelete, _ := m.countStats()
 	fileWidth := m.availableContentWidth()
 
 	if totalRename > 0 {
@@ -278,6 +300,21 @@ func (m DiffModel) buildContent() string {
 		}
 	}
 
+	if totalDelete > 0 {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(errorStyle.Render(fmt.Sprintf("🗑️ 删除文件 (%d)", totalDelete)) + "\n")
+		for _, path := range m.collectDeletes() {
+			truncated := path
+			available := max(10, fileWidth-6)
+			if len(truncated) > available {
+				truncated = "…" + truncated[len(truncated)-available+1:]
+			}
+			sb.WriteString(mutedStyle.Render(fmt.Sprintf("   %s", truncated)) + "\n")
+		}
+	}
+
 	if sb.Len() == 0 {
 		sb.WriteString(mutedStyle.Render("所有文件已是最新，无需同步。"))
 	}
@@ -287,28 +324,35 @@ func (m DiffModel) buildContent() string {
 
 func (m DiffModel) collectRenames() []model.RenameEntry {
 	var entries []model.RenameEntry
-	if m.diffMods != nil {
-		entries = append(entries, m.diffMods.ToRename...)
-	}
-	if m.diffCfg != nil {
-		entries = append(entries, m.diffCfg.ToRename...)
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg} {
+		if d != nil {
+			entries = append(entries, d.ToRename...)
+		}
 	}
 	return entries
 }
 
+func (m DiffModel) collectDeletes() []string {
+	var paths []string
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg} {
+		if d != nil {
+			paths = append(paths, d.ToDelete...)
+		}
+	}
+	return paths
+}
+
 func (m DiffModel) collectFiles(extract func(*model.DiffResult) []model.FileMetadata) []model.FileMetadata {
 	var files []model.FileMetadata
-	if m.diffMods != nil {
-		files = append(files, extract(m.diffMods)...)
-	}
-	if m.diffCfg != nil {
-		files = append(files, extract(m.diffCfg)...)
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg} {
+		if d != nil {
+			files = append(files, extract(d)...)
+		}
 	}
 	return files
 }
 
 func formatFileEntry(f model.FileMetadata, maxPathWidth int) string {
-	// 预留缩进 "   "（3字符）和大小信息的空间
 	availableForPath := max(10, maxPathWidth-10)
 	pathStr := f.Path
 	if len(pathStr) > availableForPath {
@@ -324,17 +368,14 @@ func formatFileEntry(f model.FileMetadata, maxPathWidth int) string {
 // GetDiffResult 返回合并后的差异结果。
 func (m DiffModel) GetDiffResult() *model.DiffResult {
 	result := &model.DiffResult{}
-	if m.diffMods != nil {
-		result.ToAdd = append(result.ToAdd, m.diffMods.ToAdd...)
-		result.ToUpdate = append(result.ToUpdate, m.diffMods.ToUpdate...)
-		result.ToRename = append(result.ToRename, m.diffMods.ToRename...)
-		result.Unchanged += m.diffMods.Unchanged
-	}
-	if m.diffCfg != nil {
-		result.ToAdd = append(result.ToAdd, m.diffCfg.ToAdd...)
-		result.ToUpdate = append(result.ToUpdate, m.diffCfg.ToUpdate...)
-		result.ToRename = append(result.ToRename, m.diffCfg.ToRename...)
-		result.Unchanged += m.diffCfg.Unchanged
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg} {
+		if d != nil {
+			result.ToAdd = append(result.ToAdd, d.ToAdd...)
+			result.ToUpdate = append(result.ToUpdate, d.ToUpdate...)
+			result.ToRename = append(result.ToRename, d.ToRename...)
+			result.ToDelete = append(result.ToDelete, d.ToDelete...)
+			result.Unchanged += d.Unchanged
+		}
 	}
 	return result
 }

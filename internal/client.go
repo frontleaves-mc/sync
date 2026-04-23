@@ -28,9 +28,9 @@ func NewSyncClient() *SyncClient {
 	}
 }
 
-// GetModsMetadata 获取服务端 mods 目录的文件元数据。
-func (c *SyncClient) GetModsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
-	return c.fetchMetadata(ctx, "/sync/mods/metadata")
+// GetModsMetadataWithMode 获取服务端 mods 目录的文件元数据，按 mode 筛选。
+func (c *SyncClient) GetModsMetadataWithMode(ctx context.Context, mode string) (*model.SyncMetadataResponse, error) {
+	return c.fetchMetadata(ctx, "/sync/mods/metadata?mode="+url.QueryEscape(mode))
 }
 
 // GetConfigMetadata 获取服务端 config 目录的文件元数据。

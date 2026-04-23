@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -20,16 +21,33 @@ const (
 type SyncType string
 
 const (
-	SyncTypeMods   SyncType = "mods"
-	SyncTypeConfig SyncType = "config"
+	SyncTypeModsServer SyncType = "server_mods"
+	SyncTypeModsClient SyncType = "client_mods"
+	SyncTypeConfig     SyncType = "config"
 )
 
 // FileMetadata 服务端返回的文件元数据。
 type FileMetadata struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Hash string `json:"hash"`
-	Size int64  `json:"size"`
+	Path       string `json:"path"`
+	RemotePath string `json:"-"`
+	Name       string `json:"name"`
+	Hash       string `json:"hash"`
+	Size       int64  `json:"size"`
+}
+
+// NormalizeModPaths 将 mods/server/ 和 mods/client/ 路径规范化为 mods/，
+// 同时保留原始路径到 RemotePath 用于下载。
+func NormalizeModPaths(files []FileMetadata) []FileMetadata {
+	for i := range files {
+		if strings.HasPrefix(files[i].Path, "mods/server/") || strings.HasPrefix(files[i].Path, "mods/client/") {
+			files[i].RemotePath = files[i].Path
+			parts := strings.SplitN(files[i].Path, "/", 3)
+			if len(parts) == 3 {
+				files[i].Path = parts[0] + "/" + parts[2]
+			}
+		}
+	}
+	return files
 }
 
 // SyncMetadataResponse 元数据 API 响应。
@@ -48,6 +66,7 @@ type DiffResult struct {
 	ToAdd     []FileMetadata
 	ToUpdate  []FileMetadata
 	ToRename  []RenameEntry
+	ToDelete  []string
 	Unchanged int
 }
 
@@ -61,6 +80,7 @@ type RenameEntry struct {
 type SyncResult struct {
 	Downloaded int
 	Renamed    int
+	Deleted    int
 	Failed     []FailedFile
 }
 
