@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # ============================================================
-#  FrontLeaves Sync — 自升级脚本 (macOS / Linux)
-#  这是玩家唯一需要下载的文件，放在与 .minecraft/ 同级目录下运行。
+#  FrontLeaves Sync — 服务端同步脚本 (macOS / Linux)
+#  用于 Minecraft 服务端一键同步必须模组。
+#  将此脚本放在与服务端 mods/ 目录同级的位置运行。
 # ============================================================
 
 SERVER_BASE="https://game.frontleaves.com/api/v1"
@@ -44,25 +45,25 @@ detect_platform() {
     TARGET_NAME="${BINARY_NAME}-${SUFFIX}"
 }
 
-# -------------------- 确定二进制路径（放到 .minecraft 同级的 update/ 目录） --------------------
+# -------------------- 确定二进制路径（放到 mods/ 同级的 update/ 目录） --------------------
 resolve_binary() {
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-    # 从脚本目录向上查找 .minecraft/ 所在目录
+    # 从脚本目录向上查找 mods/ 所在目录（Minecraft 服务器目录）
     MC_PARENT=""
     for dir in "$SCRIPT_DIR" "$SCRIPT_DIR/.." "$SCRIPT_DIR/../.."; do
-        if [ -d "${dir}/.minecraft" ]; then
+        if [ -d "${dir}/mods" ]; then
             MC_PARENT="$(cd "$dir" && pwd)"
             break
         fi
     done
 
     if [ -z "$MC_PARENT" ]; then
-        die "找不到 .minecraft/ 目录。
-请将本脚本放在 MC 游戏目录下运行（与 .minecraft/ 同级或其子目录内）。"
+        die "找不到 mods/ 目录。
+请将本脚本放在 MC 服务端目录下运行（与 mods/ 同级或其子目录内）。"
     fi
 
-    # 二进制放在 .minecraft 同级的 update/ 目录
+    # 二进制放在与 mods/ 同级的 update/ 目录
     UPDATE_DIR="${MC_PARENT}/update"
     mkdir -p "$UPDATE_DIR"
     BINARY_PATH="${UPDATE_DIR}/${BINARY_NAME}"
@@ -194,7 +195,7 @@ download_binary() {
 # -------------------- 主流程 --------------------
 main() {
     echo ""
-    echo -e "${CYAN}${BOLD}  FrontLeaves Sync 自升级工具${NC}"
+    echo -e "${CYAN}${BOLD}  FrontLeaves 服务端同步工具${NC}"
     echo ""
 
     detect_platform
@@ -219,9 +220,9 @@ main() {
     fi
 
     echo ""
-    ok "启动同步器..."
+    ok "启动服务端同步..."
     echo ""
-    exec "$BINARY_PATH"
+    exec "$BINARY_PATH" --server
 }
 
 main "$@"

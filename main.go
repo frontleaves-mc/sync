@@ -20,6 +20,14 @@ func main() {
 		os.Exit(0)
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "--server" {
+		if err := internal.RunServerSync(); err != nil {
+			fmt.Fprintf(os.Stderr, "服务端同步失败: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	app := internal.NewAppModel()
 	p := tea.NewProgram(app, tea.WithAltScreen())
 

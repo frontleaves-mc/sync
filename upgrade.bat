@@ -7,7 +7,7 @@ REM  FrontLeaves Sync — 自升级脚本 (Windows)
 REM  这是玩家唯一需要下载的文件，放在与 .minecraft/ 同级目录下运行。
 REM ============================================================
 
-set "SERVER_BASE=https://yggleaf.frontleaves.com/api/v1"
+set "SERVER_BASE=https://game.frontleaves.com/api/v1"
 set "METADATA_URL=%SERVER_BASE%/sync/scripts/metadata"
 set "DOWNLOAD_URL=%SERVER_BASE%/sync/download"
 set "BINARY_NAME=frontleaves-sync.exe"

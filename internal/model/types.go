@@ -11,7 +11,7 @@ const (
 	AppName    = "FrontLeaves 模组同步器"
 	AppVersion = "v1.0.0"
 
-	ServerBaseURL = "https://yggleaf.frontleaves.com/api/v1"
+	ServerBaseURL = "https://game.frontleaves.com/api/v1"
 	McDirName     = ".minecraft"
 
 	MaxDownloadWorkers = 4
