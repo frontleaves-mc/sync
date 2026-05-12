@@ -202,7 +202,12 @@ func (e *SyncEngine) DownloadAndVerify(ctx context.Context, meta model.FileMetad
 	}
 	defer f.Close()
 
-	stream, _, err := e.client.DownloadFile(ctx, meta.RemotePath)
+	remotePath := meta.RemotePath
+	if remotePath == "" {
+		remotePath = meta.Path
+	}
+
+	stream, _, err := e.client.DownloadFile(ctx, remotePath)
 	if err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("下载失败: %w", err)
