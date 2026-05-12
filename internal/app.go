@@ -58,6 +58,10 @@ func (f *metadataFetcherImpl) GetResourcepacksMetadata(ctx context.Context) (*mo
 	return f.client.GetResourcepacksMetadata(ctx)
 }
 
+func (f *metadataFetcherImpl) GetShaderpacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return f.client.GetShaderpacksMetadata(ctx)
+}
+
 func (f *metadataFetcherImpl) GetExtendsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
 	return f.client.GetExtendsMetadata(ctx)
 }
@@ -156,6 +160,8 @@ func (m AppModel) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 			config = tui.ClientModsDetailConfig
 		case model.SyncTypeResourcepacks:
 			config = tui.ResourcepacksDetailConfig
+		case model.SyncTypeShaderpacks:
+			config = tui.ShaderpacksDetailConfig
 		default:
 			return m, cmd
 		}
@@ -191,6 +197,8 @@ func (m AppModel) updateSyncDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			diffBuilder = diffBuilder.SetPrecomputedClientDiff(msg.SelectedDiff)
 		case model.SyncTypeResourcepacks:
 			diffBuilder = diffBuilder.SetPrecomputedResourcepacks(msg.SelectedDiff)
+		case model.SyncTypeShaderpacks:
+			diffBuilder = diffBuilder.SetPrecomputedShaderpacks(msg.SelectedDiff)
 		}
 
 		m.diff = diffBuilder

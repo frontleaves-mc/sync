@@ -25,6 +25,7 @@ const (
 	SyncTypeModsClient    SyncType = "client_mods"
 	SyncTypeConfig        SyncType = "config"
 	SyncTypeResourcepacks SyncType = "resourcepacks"
+	SyncTypeShaderpacks   SyncType = "shaderpacks"
 	SyncTypeExtends       SyncType = "extends"
 )
 

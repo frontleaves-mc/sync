@@ -117,6 +117,10 @@ func (e *SyncEngine) scanLocalFiles(syncType model.SyncType) map[string]string {
 		dir = filepath.Join(e.mcDir, "resourcepacks")
 		prefix = "resourcepacks"
 		recursive = true
+	case model.SyncTypeShaderpacks:
+		dir = filepath.Join(e.mcDir, "shaderpacks")
+		prefix = "shaderpacks"
+		recursive = true
 	default:
 		return hashes
 	}

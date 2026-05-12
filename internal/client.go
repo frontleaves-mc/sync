@@ -43,6 +43,11 @@ func (c *SyncClient) GetResourcepacksMetadata(ctx context.Context) (*model.SyncM
 	return c.fetchMetadata(ctx, "/sync/resourcepacks/metadata")
 }
 
+// GetShaderpacksMetadata 获取服务端 shaderpacks 目录的文件元数据。
+func (c *SyncClient) GetShaderpacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return c.fetchMetadata(ctx, "/sync/shaderpacks/metadata")
+}
+
 // GetExtendsMetadata 获取服务端 extends 目录的文件元数据。
 func (c *SyncClient) GetExtendsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
 	return c.fetchMetadata(ctx, "/sync/extends/metadata")

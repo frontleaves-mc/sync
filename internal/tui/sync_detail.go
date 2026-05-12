@@ -39,6 +39,15 @@ var (
 			return f.GetResourcepacksMetadata(ctx)
 		},
 	}
+
+	// ShaderpacksDetailConfig Shaderpacks 详情配置。
+	ShaderpacksDetailConfig = DetailConfig{
+		Title:    "Shaderpacks",
+		SyncType: model.SyncTypeShaderpacks,
+		FetchFn: func(ctx context.Context, f MetadataFetcher) (*model.SyncMetadataResponse, error) {
+			return f.GetShaderpacksMetadata(ctx)
+		},
+	}
 )
 
 // clientDetailPhase 表示详情界面的内部阶段。
