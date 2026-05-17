@@ -21,7 +21,7 @@ type syncOption struct {
 var syncOptions = []syncOption{
 	{name: "Server Mods", desc: "服务端模组（必选）", syncType: model.SyncTypeModsServer, icon: "🖥️", required: true},
 	{name: "Client Mods", desc: "客户端模组", syncType: model.SyncTypeModsClient, icon: "🎮", hasDetail: true, detailKind: model.SyncTypeModsClient},
-	{name: "Config", desc: "配置文件", syncType: model.SyncTypeConfig, icon: "📄"},
+	{name: "Config", desc: "配置文件（必选）", syncType: model.SyncTypeConfig, icon: "📄", required: true},
 	{name: "Resourcepacks", desc: "资源包", syncType: model.SyncTypeResourcepacks, icon: "🎨", hasDetail: true, detailKind: model.SyncTypeResourcepacks},
 	{name: "Shaderpacks", desc: "光影包", syncType: model.SyncTypeShaderpacks, icon: "✨", hasDetail: true, detailKind: model.SyncTypeShaderpacks},
 	{name: "Extends", desc: "扩展文件", syncType: model.SyncTypeExtends, icon: "📦"},
@@ -39,9 +39,15 @@ type SelectModel struct {
 }
 
 func NewSelectModel() SelectModel {
+	checked := make(map[int]bool)
+	for i, opt := range syncOptions {
+		if opt.required {
+			checked[i] = true
+		}
+	}
 	return SelectModel{
 		cursor:  0,
-		checked: map[int]bool{0: true},
+		checked: checked,
 	}
 }
 
