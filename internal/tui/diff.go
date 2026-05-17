@@ -20,6 +20,7 @@ type MetadataFetcher interface {
 	GetResourcepacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
 	GetShaderpacksMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
 	GetExtendsMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
+	GetTaczMetadata(ctx context.Context) (*model.SyncMetadataResponse, error)
 	ComputeDiff(remote []model.FileMetadata, syncType model.SyncType) *model.DiffResult
 }
 
@@ -46,6 +47,7 @@ type DiffDoneMsg struct {
 	DiffResourcepacks *model.DiffResult
 	DiffShaderpacks   *model.DiffResult
 	DiffExtends       *model.DiffResult
+	DiffTacz          *model.DiffResult
 	Err               error
 }
 
@@ -65,6 +67,7 @@ type DiffModel struct {
 	diffResourcepacks *model.DiffResult
 	diffShaderpacks   *model.DiffResult
 	diffExtends       *model.DiffResult
+	diffTacz          *model.DiffResult
 
 	precomputedClientDiff    *model.DiffResult
 	precomputedResourcepacks *model.DiffResult
@@ -124,7 +127,7 @@ func (m DiffModel) Init() tea.Cmd {
 func (m DiffModel) startFetch() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		var diffServer, diffClient, diffCfg, diffRp, diffSh, diffExt *model.DiffResult
+		var diffServer, diffClient, diffCfg, diffRp, diffSh, diffExt, diffTacz *model.DiffResult
 
 		for _, st := range m.syncTypes {
 			switch st {
@@ -176,6 +179,12 @@ func (m DiffModel) startFetch() tea.Cmd {
 					return DiffDoneMsg{Err: fmt.Errorf("获取 extends 元数据失败: %w", fetchErr)}
 				}
 				diffExt = m.fetcher.ComputeDiff(model.NormalizeExtendsPaths(resp.Data.Files), model.SyncTypeExtends)
+			case model.SyncTypeTacz:
+				resp, fetchErr := m.fetcher.GetTaczMetadata(ctx)
+				if fetchErr != nil {
+					return DiffDoneMsg{Err: fmt.Errorf("获取 tacz 元数据失败: %w", fetchErr)}
+				}
+				diffTacz = m.fetcher.ComputeDiff(resp.Data.Files, model.SyncTypeTacz)
 			}
 		}
 
@@ -186,6 +195,7 @@ func (m DiffModel) startFetch() tea.Cmd {
 			DiffResourcepacks: diffRp,
 			DiffShaderpacks:   diffSh,
 			DiffExtends:       diffExt,
+			DiffTacz:          diffTacz,
 		}
 	}
 }
@@ -219,6 +229,7 @@ func (m DiffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diffResourcepacks = msg.DiffResourcepacks
 		m.diffShaderpacks = msg.DiffShaderpacks
 		m.diffExtends = msg.DiffExtends
+		m.diffTacz = msg.DiffTacz
 		m.phase = diffPhasePreview
 		m.viewport.SetContent(m.buildContent())
 		m.viewport.GotoTop()
@@ -310,7 +321,7 @@ func (m DiffModel) renderPreview() string {
 }
 
 func (m DiffModel) countStats() (add, update, rename, del, fileCount, unchanged int) {
-	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends} {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends, m.diffTacz} {
 		if d != nil {
 			add += len(d.ToAdd)
 			update += len(d.ToUpdate)
@@ -385,7 +396,7 @@ func (m DiffModel) buildContent() string {
 
 func (m DiffModel) collectRenames() []model.RenameEntry {
 	var entries []model.RenameEntry
-	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends} {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends, m.diffTacz} {
 		if d != nil {
 			entries = append(entries, d.ToRename...)
 		}
@@ -395,7 +406,7 @@ func (m DiffModel) collectRenames() []model.RenameEntry {
 
 func (m DiffModel) collectDeletes() []string {
 	var paths []string
-	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends} {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends, m.diffTacz} {
 		if d != nil {
 			paths = append(paths, d.ToDelete...)
 		}
@@ -405,7 +416,7 @@ func (m DiffModel) collectDeletes() []string {
 
 func (m DiffModel) collectFiles(extract func(*model.DiffResult) []model.FileMetadata) []model.FileMetadata {
 	var files []model.FileMetadata
-	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends} {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends, m.diffTacz} {
 		if d != nil {
 			files = append(files, extract(d)...)
 		}
@@ -429,7 +440,7 @@ func formatFileEntry(f model.FileMetadata, maxPathWidth int) string {
 // GetDiffResult 返回合并后的差异结果。
 func (m DiffModel) GetDiffResult() *model.DiffResult {
 	result := &model.DiffResult{}
-	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends} {
+	for _, d := range []*model.DiffResult{m.diffServerMods, m.diffClientMods, m.diffCfg, m.diffResourcepacks, m.diffShaderpacks, m.diffExtends, m.diffTacz} {
 		if d != nil {
 			result.ToAdd = append(result.ToAdd, d.ToAdd...)
 			result.ToUpdate = append(result.ToUpdate, d.ToUpdate...)

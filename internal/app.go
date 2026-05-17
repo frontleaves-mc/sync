@@ -66,6 +66,10 @@ func (f *metadataFetcherImpl) GetExtendsMetadata(ctx context.Context) (*model.Sy
 	return f.client.GetExtendsMetadata(ctx)
 }
 
+func (f *metadataFetcherImpl) GetTaczMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return f.client.GetTaczMetadata(ctx)
+}
+
 func (f *metadataFetcherImpl) ComputeDiff(remote []model.FileMetadata, syncType model.SyncType) *model.DiffResult {
 	return f.engine.ComputeDiff(remote, syncType)
 }
