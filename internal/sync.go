@@ -121,6 +121,29 @@ func (e *SyncEngine) scanLocalFiles(syncType model.SyncType) map[string]string {
 		dir = filepath.Join(e.mcDir, "shaderpacks")
 		prefix = "shaderpacks"
 		recursive = true
+	case model.SyncTypeTacz:
+		dir = filepath.Join(e.mcDir, "tacz")
+		prefix = "tacz"
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return hashes
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if !strings.HasSuffix(strings.ToLower(entry.Name()), ".zip") {
+				continue
+			}
+			fullPath := filepath.Join(dir, entry.Name())
+			hash, err := e.computeLocalHash(fullPath)
+			if err != nil {
+				continue
+			}
+			relPath := prefix + "/" + entry.Name()
+			hashes[relPath] = "sha256:" + hash
+		}
+		return hashes
 	default:
 		return hashes
 	}

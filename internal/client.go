@@ -53,6 +53,11 @@ func (c *SyncClient) GetExtendsMetadata(ctx context.Context) (*model.SyncMetadat
 	return c.fetchMetadata(ctx, "/sync/extends/metadata")
 }
 
+// GetTaczMetadata 获取服务端 tacz 目录的文件元数据。
+func (c *SyncClient) GetTaczMetadata(ctx context.Context) (*model.SyncMetadataResponse, error) {
+	return c.fetchMetadata(ctx, "/sync/tacz/metadata")
+}
+
 // fetchMetadata 通用元数据请求。
 func (c *SyncClient) fetchMetadata(ctx context.Context, path string) (*model.SyncMetadataResponse, error) {
 	reqURL := c.baseURL + path

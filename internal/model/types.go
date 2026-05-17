@@ -27,6 +27,7 @@ const (
 	SyncTypeResourcepacks SyncType = "resourcepacks"
 	SyncTypeShaderpacks   SyncType = "shaderpacks"
 	SyncTypeExtends       SyncType = "extends"
+	SyncTypeTacz          SyncType = "tacz"
 )
 
 // FileMetadata 服务端返回的文件元数据。

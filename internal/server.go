@@ -85,6 +85,12 @@ func RunServerSync() error {
 		errs = append(errs, err)
 	}
 
+	// === Tacz 同步 ===
+	if err := syncTacz(client, engine); err != nil {
+		fail("Tacz 资源包同步失败: %s", err)
+		errs = append(errs, err)
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("同步过程中有 %d 个阶段失败", len(errs))
 	}
@@ -160,6 +166,41 @@ func syncConfig(client *SyncClient, engine *SyncEngine) error {
 
 	if len(result.Failed) > 0 {
 		return fmt.Errorf("配置文件同步有 %d 个文件失败", len(result.Failed))
+	}
+
+	return nil
+}
+
+func syncTacz(client *SyncClient, engine *SyncEngine) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	info("正在获取 Tacz 资源包列表...")
+	resp, err := client.GetTaczMetadata(ctx)
+	if err != nil {
+		return fmt.Errorf("获取 Tacz 资源包元数据失败: %w", err)
+	}
+
+	info("服务端返回 %d 个 Tacz 文件", len(resp.Data.Files))
+
+	diff := engine.ComputeDiff(resp.Data.Files, model.SyncTypeTacz)
+
+	printDiffSummary(diff, "Tacz 资源包")
+
+	if len(diff.ToAdd) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToRename) == 0 && len(diff.ToDelete) == 0 {
+		fmt.Println()
+		ok("所有 Tacz 资源包已是最新")
+		return nil
+	}
+
+	fmt.Println()
+	info("开始同步 Tacz 资源包...")
+	result := engine.ExecuteSync(ctx, diff)
+
+	printSyncResult(result)
+
+	if len(result.Failed) > 0 {
+		return fmt.Errorf("Tacz 资源包同步有 %d 个文件失败", len(result.Failed))
 	}
 
 	return nil

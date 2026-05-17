@@ -24,6 +24,7 @@ var syncOptions = []syncOption{
 	{name: "Config", desc: "配置文件（必选）", syncType: model.SyncTypeConfig, icon: "📄", required: true},
 	{name: "Resourcepacks", desc: "资源包", syncType: model.SyncTypeResourcepacks, icon: "🎨", hasDetail: true, detailKind: model.SyncTypeResourcepacks},
 	{name: "Shaderpacks", desc: "光影包", syncType: model.SyncTypeShaderpacks, icon: "✨", hasDetail: true, detailKind: model.SyncTypeShaderpacks},
+	{name: "Tacz", desc: "枪械资源包（必选）", syncType: model.SyncTypeTacz, icon: "🔫", required: true},
 	{name: "Extends", desc: "扩展文件", syncType: model.SyncTypeExtends, icon: "📦"},
 }
 
